@@ -1,2 +1,2 @@
 # samus
-A small, fast WYSIWYG text editor
+A small, fast, minimalist text editor
