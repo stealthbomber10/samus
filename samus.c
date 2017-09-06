@@ -11,12 +11,22 @@
 
 /*** defines ***/
 
+#define SAMUS_VERSION "0.0.1"
+
 #define CTRL_KEY(k) ((k) & 0x1f)
 // and with 00011111 since ctrl key chops off bits 5 and 6
+
+enum editorKey {
+  ARROW_LEFT = 'a',
+  ARROW_RIGHT = 'd',
+  ARROW_UP = 'w',
+  ARROW_DOWN = 's'
+};
 
 /*** data ***/
 
 struct editorConfig {
+  int cx, cy;
   int screenrows;
   int screencols;
   struct termios orig_termios;
@@ -68,7 +78,34 @@ char editorReadKey() {
       die("read");
     }
   }
-  return c;
+
+  if (c == '\x1b') {
+    char seq[3];
+
+    if (read(STDIN_FILENO, &seq[0], 1) != 1) {
+      return '\x1b';
+    }
+    if (read(STDIN_FILENO, &seq[1], 1) != 1) {
+      return '\x1b';
+    }
+
+    if (seq[0] == '[') {
+      switch (seq[1]) {
+        case 'A':
+          return ARROW_UP;
+        case 'B':
+          return ARROW_DOWN;
+        case 'C':
+          return ARROW_RIGHT;
+        case 'D':
+          return ARROW_LEFT;
+      }
+    }
+
+    return '\x1b';
+  } else {
+    return c;
+  }
 }
 
 int getCursorPosition(int *rows, int *cols) {
@@ -144,44 +181,100 @@ void abFree(struct abuf *ab) {
 
 /*** output ***/
 
-void editorDrawsRows() {
+void editorDrawsRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenrows; y++) {
-    write(STDOUT_FILENO, "~\r\n", 3);
+    
+    if (y == E.screenrows / 3) {
+      char welcome[80];
+      int welcomelen = snprintf(welcome, sizeof(welcome), "Samus editor -- version %s", SAMUS_VERSION);
+      if (welcomelen > E.screencols) {
+        welcomelen = E.screencols;
+      }
+      int padding = (E.screencols - welcomelen) / 2;
+      if (padding) {
+        abAppend(ab, "~", 1);
+        padding--;
+      }
+      while (padding--) {
+        abAppend(ab, " ", 1);
+      }
+      abAppend(ab, welcome, welcomelen);
+    } else {
+      abAppend(ab, "~", 1);
+    }
+    abAppend(ab, "\x1b[K", 3);
 
     // make exception for last line (prevent scroll down)
     if (y < E.screenrows - 1) {
-      write(STDOUT_FILENO, "\r\n", 2);
+      abAppend(ab, "\r\n", 2);
     }
   }
 }
 
 void editorRefreshScreen() {
-  write(STDOUT_FILENO, "\x1b[2J", 4);
-  write(STDOUT_FILENO, "\x1b[H", 3);
+  struct abuf ab = ABUF_INIT;
 
-  editorDrawsRows();
+  abAppend(&ab, "\x1b[?25l", 6);
+  abAppend(&ab, "\x1b[H", 3);
 
-  write(STDOUT_FILENO, "\x1b[H", 3);
+  editorDrawsRows(&ab);
+
+  char buf[32];
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+  abAppend(&ab, buf, strlen(buf));
+
+  abAppend(&ab, "\x1b[?25h", 6);
+
+  write(STDOUT_FILENO, ab.b, ab.len);
+  abFree(&ab);
 }
 
 /*** input ***/
 
+void editorMoveCursor(char key) {
+  switch (key) {
+    case ARROW_LEFT:
+      E.cx--;
+      break;
+    case ARROW_RIGHT:
+      E.cx++;
+      break;
+    case ARROW_UP:
+      E.cy--;
+      break;
+    case ARROW_DOWN:
+      E.cy++;
+      break;
+  }
+}
+ 
 void editorProcessKeypress() {
   char c = editorReadKey();
 
   switch (c) {
     case CTRL_KEY('q'):
-    write(STDOUT_FILENO, "\x1b[2J", 4);
-    write(STDOUT_FILENO, "\x1b[H", 3);
-    exit(0);
-    break;
+      write(STDOUT_FILENO, "\x1b[2J", 4);
+      write(STDOUT_FILENO, "\x1b[H", 3);
+      exit(0);
+      break;
+    case ARROW_UP:
+    case ARROW_DOWN:
+    case ARROW_LEFT:
+    case ARROW_RIGHT:
+      editorMoveCursor(c);
+      break;
   }
 }
 
 /*** init ***/
 
 void initEditor() {
+
+  E.cx = 0;
+  E.cy = 0;
+
+
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
     die("getWindowSize");
   }
