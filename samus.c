@@ -25,7 +25,7 @@
 // and with 00011111 since ctrl key chops off bits 5 and 6
 
 enum editorKey {
-  ARROW_LEFT = 100,
+  ARROW_LEFT = 1000,
   ARROW_RIGHT,
   ARROW_UP,
   ARROW_DOWN,
@@ -86,7 +86,7 @@ void enableRawMode() {
   struct termios raw = E.orig_termios;
 
   // turn off a bunch of flags (force bits to 0)
-  raw.c_lflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+  raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
   raw.c_oflag &= ~(OPOST);
   raw.c_cflag |= (CS8);
   raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
@@ -102,9 +102,7 @@ int editorReadKey() {
   int nread;
   char c;
   while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
-    if (nread == -1 && errno != EAGAIN) {
-      die("read");
-    }
+    if (nread == -1 && errno != EAGAIN) die("read");
   }
 
   if (c == '\x1b') {
@@ -126,7 +124,7 @@ int editorReadKey() {
           switch (seq[1]) {
             case '1':
               return HOME_KEY;
-            case '3':
+            case '3': 
               return DEL_KEY;
             case '4':
               return END_KEY;
@@ -141,29 +139,29 @@ int editorReadKey() {
           }
         }
       } else {
-          switch (seq[1]) {
-            case 'A':
-              return ARROW_UP;
-            case 'B':
-              return ARROW_DOWN;
-            case 'C':
-              return ARROW_RIGHT;
-            case 'D':
-              return ARROW_LEFT;
-            case 'H':
-              return HOME_KEY;
-            case 'F':
-              return END_KEY;
-          }
-        }
-      } else if (seq[0] == '0') {
         switch (seq[1]) {
+          case 'A':
+            return ARROW_UP;
+          case 'B':
+            return ARROW_DOWN;
+          case 'C':
+            return ARROW_RIGHT;
+          case 'D':
+            return ARROW_LEFT;
           case 'H':
             return HOME_KEY;
           case 'F':
             return END_KEY;
         }
       }
+    } else if (seq[0] == 'O') {
+      switch (seq[1]) {
+        case 'H':
+          return HOME_KEY;
+        case 'F':
+          return END_KEY;
+      }
+    }
 
     return '\x1b';
   } else {
@@ -174,7 +172,6 @@ int editorReadKey() {
 int getCursorPosition(int *rows, int *cols) {
   char buf[32];
   unsigned int i = 0;
-  
 
   // x1b is beginning of escape sequence
 
@@ -242,7 +239,7 @@ void editorUpdateRow(erow *row) {
   }
 
   free(row->render);
-  row->render = malloc(row->size + tabs*(SAMUS_TAB_STOP - 1) + 1); // row->size already counts 1 tab
+  row->render = malloc(row->size + tabs*(SAMUS_TAB_STOP - 1) + 1);
 
   // idx is the number of characters we copied into row->render
   int idx = 0;
@@ -281,6 +278,7 @@ void editorAppendRow(char *s, size_t len) {
 void editorOpen(char *filename) {
   free(E.filename);
   E.filename = strdup(filename);
+
   FILE *fp = fopen(filename, "r");
   if (!fp) {
     die("fopen");
@@ -370,14 +368,16 @@ void editorDrawRows(struct abuf *ab) {
       }
     } else {
       int len = E.row[filerow].rsize - E.coloff;
-      if (len < 0) len = 0;
+      if (len < 0) {
+        len = 0;
+      }
       if (len > E.screencols) {
         len = E.screencols;
       }
       abAppend(ab, &E.row[filerow].render[E.coloff], len);
     }
-    abAppend(ab, "\x1b[K", 3);
 
+    abAppend(ab, "\x1b[K", 3);
     abAppend(ab, "\r\n", 2);
   }
 }
@@ -385,7 +385,7 @@ void editorDrawRows(struct abuf *ab) {
 void editorDrawStatusBar(struct abuf *ab) {
   abAppend(ab, "\x1b[7m", 4);
   char status[80], rstatus[80];
-  int len = snprintf(status, sizeof(status), "%.20s - %d lines", E.filename ? E.filename : "[No name]", E.numrows);
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines", E.filename ? E.filename : "[No Name]", E.numrows);
   int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
   if (len > E.screencols) {
     len = E.screencols;
@@ -407,9 +407,7 @@ void editorDrawStatusBar(struct abuf *ab) {
 void editorDrawMessageBar(struct abuf *ab) {
   abAppend(ab, "\x1b[K", 3);
   int msglen = strlen(E.statusmsg);
-  if (msglen > E.screencols) {
-    msglen = E.screencols;
-  }
+  if (msglen > E.screencols) msglen = E.screencols;
   if (msglen && time(NULL) - E.statusmsg_time < 5) {
     abAppend(ab, E.statusmsg, msglen);
   }
@@ -428,7 +426,7 @@ void editorRefreshScreen() {
   editorDrawMessageBar(&ab);
 
   char buf[32];
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.rx - E.coloff + 1);
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, (E.rx - E.coloff) + 1);
   abAppend(&ab, buf, strlen(buf));
 
   abAppend(&ab, "\x1b[?25h", 6);
@@ -485,7 +483,7 @@ void editorMoveCursor(int key) {
     E.cx = rowlen;
   }
 }
- 
+
 void editorProcessKeypress() {
   int c = editorReadKey();
 
@@ -508,20 +506,21 @@ void editorProcessKeypress() {
 
     case PAGE_UP:
     case PAGE_DOWN:
-    {
-      if (c == PAGE_UP) {
-        E.cy = E.rowoff;
-      } else if (c == PAGE_DOWN) {
-        E.cy = E.rowoff + E.screenrows - 1;
-        if (E.cy > E.numrows) E.cy = E.numrows;
-      }
+      {
+        if (c == PAGE_UP) {
+          E.cy = E.rowoff;
+        } else if (c == PAGE_DOWN) {
+          E.cy = E.rowoff + E.screenrows - 1;
+          if (E.cy > E.numrows) E.cy = E.numrows;
+        }
 
-      int times = E.screenrows;
-      while (times--) {
-        editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+        int times = E.screenrows;
+        while (times--) {
+          editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+        }
       }
-    }
-    break;
+      break;
+
     case ARROW_UP:
     case ARROW_DOWN:
     case ARROW_LEFT:
@@ -534,16 +533,16 @@ void editorProcessKeypress() {
 /*** init ***/
 
 void initEditor() {
-
   E.cx = 0;
   E.cy = 0;
+  E.rx = 0;
   E.rowoff = 0;
   E.coloff = 0;
   E.numrows = 0;
   E.row = NULL;
   E.filename = NULL;
   E.statusmsg[0] = '\0';
-  E.statusmsg_time = '\0';
+  E.statusmsg_time = 0;
 
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) {
     die("getWindowSize");
@@ -564,5 +563,6 @@ int main(int argc, char *argv[]) {
     editorRefreshScreen();
     editorProcessKeypress();
   }
+
   return 0;
 }
