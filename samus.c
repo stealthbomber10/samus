@@ -3,7 +3,7 @@
 #define _DEFAULT_SOURCE
 #define _BSD_SOURCE
 #define _GNU_SOURCE
-asdsaddsaddasdsadassasasdcdscsdcsdacsacsasasaasasdsadaawsadsadsada
+
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -63,6 +63,10 @@ struct editorConfig {
 };
 
 struct editorConfig E;
+
+/*** prototypes ***/
+
+void editorSetStatusMessage(const char *fmt, ...);
 
 /*** terminal ***/
 
@@ -353,12 +357,14 @@ void editorSave() {
       if (write(fd, buf, len) == len) {
         close(fd);
         free(buf);
+        editorSetStatusMessage("%d bytes written to disk", len);
         return;
       }
     }
     close(fd);
   }
   free(buf);
+  editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
 }
 
 /*** append buffer ***/
@@ -641,7 +647,7 @@ int main(int argc, char *argv[]) {
     editorOpen(argv[1]);
   }
 
-  editorSetStatusMessage("HELP: Ctrl-Q = quit");
+  editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit");
 
   while (1) {
     editorRefreshScreen();
