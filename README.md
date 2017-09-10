@@ -1,11 +1,11 @@
 # samus
 A small, fast, minimalist text editor (based on kilo).
 
-# Installation and Usage
+To run, make sure you have gcc and make installed first.
 
-Make sure you have gcc and make installed.
-
+```bash
 $ git clone https://github.com/trentandraka/samus
 $ cd samus
 $ make
 $ ./samus <code>
+```
